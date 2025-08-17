@@ -81,28 +81,40 @@ class Instance(Construct):
             tags=[CfnTag(key="Name", value=self.instance_name)],
             user_data=base64.b64encode(user_data.encode("utf-8")).decode("utf-8"),
         )
-        self.instance_id = self.cfn_instance.get_att("InstanceId")
-        self.private_ip = self.cfn_instance.get_att("PrivateIp")
-        self.public_ip = self.cfn_instance.get_att("PublicIp")
-        self.private_dns_name = self.cfn_instance.get_att("PrivateDnsName")
-        self.public_dns_name = self.cfn_instance.get_att("PublicDnsName")
-        CfnOutput(self, "InstanceId", value=self.instance_id.to_string())
-        CfnOutput(self, "PrivateIp", value=self.private_ip.to_string())
+        self.instance_id = self.cfn_instance.get_att("InstanceId").to_string()
+        self.private_ip = self.cfn_instance.get_att("PrivateIp").to_string()
+        self.public_ip = self.cfn_instance.get_att("PublicIp").to_string()
+        self.private_dns_name = self.cfn_instance.get_att("PrivateDnsName").to_string()
+        self.public_dns_name = self.cfn_instance.get_att("PublicDnsName").to_string()
+        CfnOutput(self, "InstanceId", value=self.instance_id)
+        CfnOutput(self, "PrivateIp", value=self.private_ip)
         CfnOutput(
             self,
             "PrivateDns",
-            value=self.private_dns_name.to_string(),
+            value=self.private_dns_name,
         )
-        CfnOutput(self, "PublicIp", value=self.public_ip.to_string())
+        CfnOutput(self, "PublicIp", value=self.public_ip)
         CfnOutput(
             self,
             "PublicDns",
-            value=self.public_dns_name.to_string(),
+            value=self.public_dns_name,
         )
 
     def add_admin_permission(self):
         self.role.add_managed_policy(
             iam.ManagedPolicy.from_aws_managed_policy_name("AdministratorAccess")
+        )
+
+    def add_eip(self, eip_allocation: str | None = None):
+        if not eip_allocation:
+            eip = ec2.CfnEIP(self, "ElasticIpv4")
+            eip_allocation = eip.attr_allocation_id
+
+        ec2.CfnEIPAssociation(
+            self,
+            "ElasticIpAssociation",
+            allocation_id=eip_allocation,
+            instance_id=self.instance_id,
         )
 
     def allow_ssh_from_local(self):

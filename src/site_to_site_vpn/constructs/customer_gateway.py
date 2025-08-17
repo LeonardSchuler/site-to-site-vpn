@@ -25,9 +25,10 @@ class CustomerGateway(Construct):
         *,
         vpc: ec2.Vpc,
         public_subnet: ec2.ISubnet,
+        eip_allocation: str,
     ):
         super().__init__(scope, id)
-        self.gateway = Instance(
+        self.instance = Instance(
             self,
             "CustomerGateway",
             name="customer-gateway",
@@ -38,4 +39,5 @@ class CustomerGateway(Construct):
             allow_packet_forwarding=True,
             user_data=USER_DATA,
         )
-        self.gateway.allow_ssh_from_local()
+        self.instance.allow_ssh_from_local()
+        self.instance.add_eip(eip_allocation=eip_allocation)

@@ -5,7 +5,7 @@ from ..constructs.customer_gateway import CustomerGateway
 
 
 class DatacenterVPCStack(Stack):
-    def __init__(self, scope: Construct, id: str, **kwargs) -> None:
+    def __init__(self, scope: Construct, id: str, *, cidr: str, **kwargs) -> None:
         super().__init__(scope, id, **kwargs)
 
         # The code that defines your stack goes here
@@ -15,7 +15,7 @@ class DatacenterVPCStack(Stack):
             "VPC",
             vpc_name="datacenter",
             max_azs=3,
-            ip_addresses=ec2.IpAddresses.cidr("10.0.0.0/16"),
+            ip_addresses=ec2.IpAddresses.cidr(cidr),
             # configuration will create 3 groups in 2 AZs = 6 subnets.
             subnet_configuration=[
                 ec2.SubnetConfiguration(
@@ -40,16 +40,24 @@ class DatacenterVPCStack(Stack):
             "DynamoDbEndpoint", service=ec2.GatewayVpcEndpointAwsService.DYNAMODB
         )
 
+        customer_gateway_public_ip = ec2.CfnEIP(self, "CustomerGatewayElasticIpv4")
+        self.customer_gateway_public_ip = customer_gateway_public_ip.attr_public_ip
+        self.customer_gateway_public_ip_allocation_id = (
+            customer_gateway_public_ip.attr_allocation_id
+        )
         CfnOutput(self, "VPCId", value=self.vpc.vpc_id)
 
 
 class DatacenterCustomerGatewayStack(Stack):
-    def __init__(self, scope: Construct, id: str, vpc: ec2.Vpc, **kwargs) -> None:
+    def __init__(
+        self, scope: Construct, id: str, vpc: ec2.Vpc, eip_allocation: str, **kwargs
+    ) -> None:
         super().__init__(scope, id, **kwargs)
 
-        CustomerGateway(
+        self.customer_gateway = CustomerGateway(
             self,
             "CustomerGateway",
             vpc=vpc,
             public_subnet=vpc.public_subnets[0],
+            eip_allocation=eip_allocation,
         )

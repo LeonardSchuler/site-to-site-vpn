@@ -1,7 +1,8 @@
-from aws_cdk import CfnOutput, Stack
+from aws_cdk import Stack
 import aws_cdk.aws_ec2 as ec2
 from constructs import Construct
-from ..constructs.ec2 import Instance
+from ..constructs.web_server import WebServer
+from ..constructs.vpn_connection import VpnConnection
 
 
 class VpcStack(Stack):
@@ -13,9 +14,12 @@ class VpcStack(Stack):
         cidr: str,
         datacenter_cidr: str,
         customer_gateway_public_ip: str,
+        tun1_pre_shared_key: str,
+        tun1_inner_cidr: str,
         **kwargs,
     ) -> None:
         super().__init__(scope, id, **kwargs)
+        # tun1_pre_shared_key: Allowed characters are alphanumeric characters period . and underscores _. Must be between 8 and 64 characters in length and cannot start with zero (0).
 
         # The code that defines your stack goes here
 
@@ -48,54 +52,34 @@ class VpcStack(Stack):
             "DynamoDbEndpoint", service=ec2.GatewayVpcEndpointAwsService.DYNAMODB
         )
 
-        # use this instead of add_vpn_connection for dynamic routing via bgp
-        # vpc.enable_vpn_gateway(
-        #    vpn_route_propagation=[
-        #        ec2.SubnetSelection(subnet_type=ec2.SubnetType.PUBLIC),
-        #        ec2.SubnetSelection(subnet_type=ec2.SubnetType.PRIVATE_WITH_EGRESS),
-        #        ec2.SubnetSelection(subnet_type=ec2.SubnetType.PRIVATE_ISOLATED),
-        #    ],
-        #    type="ipsec.1",
-        # )
-        vpn_connection = self.vpc.add_vpn_connection(
-            "Site2SiteVPN",
-            ip=customer_gateway_public_ip,
-            static_routes=[datacenter_cidr],
+        self.vpn_connection = VpnConnection(
+            self,
+            "VpnConnection",
+            vpc=self.vpc,
+            datacenter_cidr=datacenter_cidr,
+            customer_gateway_public_ip=customer_gateway_public_ip,
+            tun1_pre_shared_key=tun1_pre_shared_key,
+            tun1_inner_cidr=tun1_inner_cidr,
         )
+        self.vpn_connection.add_routes_to_vpgw()
 
-        all_subnets = (
-            self.vpc.select_subnets(subnet_type=ec2.SubnetType.PUBLIC).subnets
-            + self.vpc.select_subnets(
-                subnet_type=ec2.SubnetType.PRIVATE_ISOLATED
-            ).subnets
-            + self.vpc.select_subnets(
-                subnet_type=ec2.SubnetType.PRIVATE_WITH_EGRESS
-            ).subnets
+
+class WebServerStack(Stack):
+    def __init__(
+        self,
+        scope: Construct,
+        id: str,
+        *,
+        vpc: ec2.IVpc,
+        subnet: ec2.ISubnet,
+        access_from_cidr: str,
+        **kwargs,
+    ) -> None:
+        super().__init__(scope, id, **kwargs)
+        self.web_server = WebServer(
+            self,
+            "webserver",
+            vpc=vpc,
+            subnet=subnet,
+            access_from_cidr=access_from_cidr,
         )
-        for subnet in all_subnets:
-            route = ec2.CfnRoute(
-                self,
-                f"{subnet.node.id}DcRoute",
-                route_table_id=subnet.route_table.route_table_id,
-                destination_cidr_block=datacenter_cidr,
-                gateway_id=self.vpc.vpn_gateway_id,
-            )
-            route.add_dependency(vpn_connection.node.default_child)  # type: ignore
-
-        CfnOutput(self, "VPCId", value=self.vpc.vpc_id)
-
-
-# class WebServerStack(Stack):
-#    def __init__(
-#        self,
-#        scope: Construct,
-#        id: str,
-#        *,
-#        vpc: ec2.IVpc,
-#        subnet: ec2.ISubnet,
-#        **kwargs,
-#    ) -> None:
-#        super().__init__(scope, id, **kwargs)
-#        self.web_server = Instance(
-#            self, "WebServer", name="webserver", vpc=vpc, subnet=subnet, instance_type="m7a.large",
-#        )

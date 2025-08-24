@@ -1,7 +1,10 @@
 from aws_cdk import CfnOutput, Stack
 import aws_cdk.aws_ec2 as ec2
 from constructs import Construct
+
+from ..constructs.ec2 import Instance
 from ..constructs.customer_gateway import CustomerGateway
+from ..constructs.constants import Ubuntu
 
 
 class DatacenterVPCStack(Stack):
@@ -50,14 +53,73 @@ class DatacenterVPCStack(Stack):
 
 class DatacenterCustomerGatewayStack(Stack):
     def __init__(
-        self, scope: Construct, id: str, vpc: ec2.Vpc, eip_allocation: str, **kwargs
+        self,
+        scope: Construct,
+        id: str,
+        dc_vpc: ec2.Vpc,
+        cgw_eip_allocation_id: str,
+        vpgw_tun1_public_ip: str,
+        tun1_pre_shared_key: str,
+        cgw_tun1_link_local_ip: str,
+        vpgw_tun1_link_local_ip: str,
+        vpc_cidr: str,
+        dc_cidr: str,
+        **kwargs,
     ) -> None:
         super().__init__(scope, id, **kwargs)
 
         self.customer_gateway = CustomerGateway(
             self,
             "CustomerGateway",
-            vpc=vpc,
-            public_subnet=vpc.public_subnets[0],
-            eip_allocation=eip_allocation,
+            dc_vpc=dc_vpc,
+            dc_public_subnet=dc_vpc.public_subnets[0],
+            cgw_eip_allocation_id=cgw_eip_allocation_id,
+            vpgw_tun1_public_ip=vpgw_tun1_public_ip,
+            tun1_pre_shared_key=tun1_pre_shared_key,
+            cgw_tun1_link_local_inner_ip=cgw_tun1_link_local_ip,
+            vpgw_tun1_link_local_inner_ip=vpgw_tun1_link_local_ip,
+            vpc_cidr=vpc_cidr,
+            dc_cidr=dc_cidr,
         )
+
+        all_subnets = (
+            dc_vpc.select_subnets(subnet_type=ec2.SubnetType.PUBLIC).subnets
+            + dc_vpc.select_subnets(subnet_type=ec2.SubnetType.PRIVATE_ISOLATED).subnets
+            + dc_vpc.select_subnets(
+                subnet_type=ec2.SubnetType.PRIVATE_WITH_EGRESS
+            ).subnets
+        )
+        for subnet in all_subnets:
+            ec2.CfnRoute(
+                self,
+                f"{subnet.node.id}CgwRoute",
+                route_table_id=subnet.route_table.route_table_id,
+                destination_cidr_block=vpc_cidr,
+                instance_id=self.customer_gateway.instance.instance_id,
+            )
+
+
+class DatacenterClient(Stack):
+    def __init__(
+        self,
+        scope: Construct,
+        id: str,
+        dc_vpc: ec2.Vpc,
+        dc_subnet: ec2.ISubnet,
+        **kwargs,
+    ) -> None:
+        super().__init__(scope, id, **kwargs)
+
+        self.client = Instance(
+            self,
+            "Client",
+            name="dc-client",
+            vpc=dc_vpc,
+            subnet=dc_subnet,
+            instance_type="m7a.large",
+            ami_id=Ubuntu.X86.value,
+        )
+        self.client.allow_ssh_from_local()
+
+        # TODO: remove
+        self.client.allow_ping_from("10.0.0.0/8")

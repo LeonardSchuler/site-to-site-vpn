@@ -12,7 +12,7 @@ class Instance(Construct):
         id: str,
         *,
         name: str,
-        vpc: ec2.Vpc,
+        vpc: ec2.IVpc,
         subnet: ec2.ISubnet,
         instance_type: str,
         ami_id: str,
@@ -47,7 +47,7 @@ class Instance(Construct):
             "SecurityGroup",
             vpc=vpc,
             allow_all_outbound=True,
-            security_group_name="sg",
+            security_group_name=f"{name}-sg",
         )
         self.cfn_instance = ec2.CfnInstance(
             self,
@@ -137,4 +137,9 @@ class Instance(Construct):
             peer=ec2.Peer.ipv4(f"{your_public_ip}/32"),
             connection=ec2.Port.tcp(22),
             description="Allow SSH from my IP",
+        )
+
+    def allow_ping_from(self, cidr: str):
+        self.security_group.add_ingress_rule(
+            peer=ec2.Peer.ipv4(cidr), connection=ec2.Port.all_icmp()
         )

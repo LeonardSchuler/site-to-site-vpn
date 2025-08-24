@@ -1,2 +1,4 @@
 .cdk.staging/
 cdk.out/
+.env
+.venv/
